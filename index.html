@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vokabeltrainer</title>
+<style>
+  :root { --bg:#f4f4f2; --card:#fff; --ink:#1c1c1e; --muted:#8a8a8e; --accent:#0a6cff;
+          --ok:#1f9d55; --bad:#d64545; --warn:#e8a13d; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg);
+         color:var(--ink); display:flex; justify-content:center; padding:24px 12px; }
+  main { width:100%; max-width:520px; }
+  h1 { font-size:1.15rem; margin:0 0 12px; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  select,button { font:inherit; padding:7px 10px; border:1px solid #d5d5d8; border-radius:8px;
+                  background:var(--card); }
+  button { cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .card { background:var(--card); border-radius:14px; padding:22px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .prompt-label { font-size:.75rem; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  .prompt { font-size:1.7rem; margin:4px 0 16px; min-height:2.2rem; }
+  input[type=text] { width:100%; font:inherit; font-size:1.15rem; padding:10px 12px;
+                     border:1.5px solid #d5d5d8; border-radius:8px; }
+  input[type=text]:focus { outline:none; border-color:var(--accent); }
+  .actions { display:flex; gap:8px; margin-top:12px; align-items:center; }
+  .feedback { margin-top:12px; font-size:.95rem; min-height:1.4rem; }
+  .feedback.ok { color:var(--ok); }
+  .feedback.bad { color:var(--bad); }
+  .info { margin-top:8px; color:var(--muted); font-size:.9rem; font-style:italic; }
+  .stats { display:flex; justify-content:space-between; font-size:.8rem; color:var(--muted); margin-top:14px; }
+  .hard-toggle { color:var(--muted); }
+  .hard-toggle.on { color:var(--warn); border-color:var(--warn); }
+  .checkbox { display:flex; align-items:center; gap:6px; font-size:.85rem; color:var(--muted); }
+  details { margin-top:16px; font-size:.9rem; }
+  textarea { width:100%; min-height:90px; font:inherit; padding:8px; border:1px solid #d5d5d8;
+             border-radius:8px; margin-top:6px; }
+  .pill { font-size:.72rem; background:#eee; border-radius:99px; padding:2px 8px; color:var(--muted); }
+  .override { border-color:var(--ok); color:var(--ok); }
+  kbd { font:inherit; font-size:.7rem; color:var(--muted); }
+  button.primary kbd { color:rgba(255,255,255,.8); }
+  .feedback small { color:var(--muted); font-style:normal; }
+  #results table { width:100%; border-collapse:collapse; margin-top:10px; font-size:.9rem; }
+  #results th, #results td { text-align:left; padding:4px 6px; border-bottom:1px solid #eee; }
+  #results td.n { color:var(--bad); }
+  #progressBox { margin-bottom:14px; font-size:.9rem; }
+  #progressWrap table { width:100%; border-collapse:collapse; font-size:.85rem; }
+  #progressWrap th, #progressWrap td { text-align:left; padding:4px 6px; border-bottom:1px solid #eee; }
+  #progressWrap tr[data-deck] { cursor:pointer; }
+  #progressWrap tr.cur td.name { font-weight:600; }
+  #progressWrap td.num { white-space:nowrap; color:var(--muted); text-align:right; }
+  .pbar { background:#eee; border-radius:99px; height:8px; min-width:70px; }
+  .pbar > div { background:var(--ok); height:8px; border-radius:99px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Vokabeltrainer <span id="deckCount" class="pill"></span></h1>
+
+  <div class="bar">
+    <select id="deckSel"></select>
+    <select id="dirSel">
+      <option value="de2fs">Deutsch → Fremdsprache</option>
+      <option value="fs2de">Fremdsprache → Deutsch</option>
+      <option value="mix">Beides gemischt</option>
+    </select>
+  </div>
+  <div class="bar">
+    <label class="checkbox"><input type="checkbox" id="fuzzy" checked> Akzente ignorieren</label>
+    <label class="checkbox"><input type="checkbox" id="hardOnly"> Nur schwere</label>
+  </div>
+
+  <details id="progressBox">
+    <summary>Fortschritt je Abschnitt</summary>
+    <div id="progressWrap" style="margin-top:8px"></div>
+  </details>
+
+  <div class="card">
+    <div id="quiz">
+    <div class="prompt-label" id="promptLabel"></div>
+    <div class="prompt" id="prompt"></div>
+    <input type="text" id="answer" autocomplete="off" autocapitalize="none" placeholder="Antwort…">
+    <div class="actions">
+      <button class="primary" id="check">Prüfen <kbd>↵</kbd></button>
+      <button id="next">Weiter <kbd>→ / Alt+N</kbd></button>
+      <button id="correct" class="override" hidden>✓ Als richtig <kbd>Alt+R</kbd></button>
+      <button id="hardBtn" class="hard-toggle" title="Als schwer markieren">★ Schwer <kbd>Alt+S</kbd></button>
+      <button id="finish">Beenden <kbd>Alt+B</kbd></button>
+    </div>
+    <div class="feedback" id="feedback"></div>
+    <div class="info" id="info"></div>
+    <div class="stats">
+      <span id="statLine">0 richtig · 0 falsch</span>
+      <span id="deckInfo"></span>
+    </div>
+    </div>
+    <div id="results" hidden>
+      <div class="prompt-label">Auswertung</div>
+      <div class="prompt" id="scoreLine" style="font-size:1.15rem"></div>
+      <div id="wrongWrap"></div>
+      <div class="actions">
+        <button class="primary" id="again">Neu starten</button>
+        <button id="resume">Weiter üben</button>
+      </div>
+    </div>
+  </div>
+
+  <details>
+    <summary>Vokabeln importieren (einfügen: <code>deutsch;fremdsprache;info(optional)</code> je Zeile)</summary>
+    <input type="text" id="newDeckName" placeholder="Deckname, z. B. Spanisch U3" style="margin-top:8px">
+    <textarea id="importArea" placeholder="der Hund;el perro;mask."></textarea>
+    <div class="actions"><button class="primary" id="importBtn">Importieren</button></div>
+    <div class="feedback" id="importMsg"></div>
+  </details>
+</main>
+
+<script src="decks.js"></script>
+<script>
+const DECKS = Object.assign({}, window.VT_DECKS || {}, JSON.parse(localStorage.getItem("vt_custom") || "{}"));
+const PROG = JSON.parse(localStorage.getItem("vt_progress") || "{}");
+const $ = id => document.getElementById(id);
+let cur = null, answered = false, lastWasHit = false, session = { ok: 0, bad: 0 };
+let curPool = [], seen = new Set(), wrongMap = {};
+
+const save = () => localStorage.setItem("vt_progress", JSON.stringify(PROG));
+const keyOf = w => w.de + "::" + w.fs;
+const prog = w => PROG[deckName() + "|" + keyOf(w)] || (PROG[deckName() + "|" + keyOf(w)] = { hard: false, ok: 0, bad: 0 });
+const deckName = () => $("deckSel").value;
+const deck = () => DECKS[deckName()] || [];
+const norm = s => s.trim().toLowerCase().replace(/\.+$/, "");
+const loose = s => s.replace(/\b(to|the)\b/g, " ").replace(/\s{2,}/g, " ").trim();
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const stripAcc = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+const dir = () => $("dirSel").value === "mix" ? (Math.random() < .5 ? "de2fs" : "fs2de") : $("dirSel").value;
+
+function seenInPool() {
+  const pkeys = new Set(curPool.map(keyOf));
+  return { n: [...seen].filter(k => pkeys.has(k)).length, total: pkeys.size };
+}
+
+function statText() {
+  const left = seenInPool().total - seenInPool().n;
+  return `${session.ok} richtig · ${session.bad} falsch · ${left} übrig`;
+}
+
+function renderProgress() {
+  const rows = Object.keys(DECKS).map(d => {
+    const words = DECKS[d] || [];
+    let can = 0;
+    for (const w of words) {
+      const p = PROG[d + "|" + keyOf(w)];
+      if (p && p.ok > p.bad && p.ok >= 1) can++;
+    }
+    const pct = words.length ? Math.round(100 * can / words.length) : 0;
+    return `<tr${d === deckName() ? ' class="cur"' : ""} data-deck="${esc(d)}">`
+      + `<td class="name">${esc(d)}</td>`
+      + `<td><div class="pbar"><div style="width:${pct}%"></div></div></td>`
+      + `<td class="num">${can}/${words.length}</td></tr>`;
+  });
+  $("progressWrap").innerHTML = `<table><tr><th>Deck</th><th></th><th>kann</th></tr>${rows.join("")}</table>`;
+}
+
+function refreshDecks(sel) {
+  $("deckSel").innerHTML = Object.keys(DECKS).map(d => `<option ${d === sel ? "selected" : ""}>${d}</option>`).join("");
+  $("deckCount").textContent = Object.keys(DECKS).length + " Decks";
+}
+
+function pick() {
+  const words = deck();
+  if (!words.length) { cur = null; return; }
+  let pool = words;
+  if ($("hardOnly").checked) {
+    const hard = words.filter(w => prog(w).hard);
+    if (hard.length) pool = hard;
+  }
+  curPool = pool;
+  const weighted = pool.flatMap(w => Array(prog(w).hard ? 3 : 1).fill(w));
+  cur = weighted[Math.floor(Math.random() * weighted.length)];
+  cur.dir = dir();
+}
+
+function show() {
+  $("results").hidden = true; $("quiz").hidden = false;
+  if (!cur) { $("prompt").textContent = "Keine Vokabeln im Deck."; return; }
+  answered = false; lastWasHit = false;
+  seen.add(keyOf(cur));
+  $("correct").hidden = true;
+  $("promptLabel").textContent = cur.dir === "de2fs" ? "Deutsch" : "Fremdsprache";
+  $("prompt").textContent = cur.dir === "de2fs" ? cur.de : cur.fs;
+  $("answer").value = ""; $("feedback").textContent = ""; $("info").textContent = "";
+  $("hardBtn").classList.toggle("on", prog(cur).hard);
+  const sp = seenInPool();
+  $("deckInfo").textContent = `Vokabel ${sp.n}/${sp.total} · ${deck().filter(w => prog(w).hard).length} schwer`;
+  if ($("progressBox").open) renderProgress();
+  $("statLine").textContent = statText();
+  $("answer").focus();
+}
+
+function expandAlt(s) {
+  const m = s.match(/(\S+)\/(\S+)/);
+  if (!m) return [s.trim()];
+  const [full, a, b] = m;
+  return [...new Set([
+    s.slice(0, m.index) + a,
+    ...expandAlt(s.replace(full, a)),
+    ...expandAlt(s.replace(full, b))
+  ])].map(x => x.trim()).filter(Boolean);
+}
+
+const ABBR = [
+  [/\bsth\./g, "something"], [/\bsb\./g, "somebody"],
+  [/\bjdn\./g, "jemand"], [/\bjdm\./g, "jemandem"], [/\bjd\./g, "jemand"],
+  [/\betw\./g, "etwas"],
+];
+
+function variants(s) {
+  const out = new Set();
+  for (const v of expandAlt(s)) {
+    const forms = new Set([v]);
+    for (const f of [...forms]) {
+      forms.add(f.replace(/\s*\([^)]*\)/g, "").replace(/\s{2,}/g, " ").trim());
+      forms.add(f.replace(/\(([^)]*)\)/g, "$1").trim());
+    }
+    for (const f of [...forms]) forms.add(f.replace(/,?\s*-[ao]\b/g, "").trim());
+    for (const f of [...forms]) forms.add(f.replace(/\s+(a|de|para)\s+(algo|alguien)$/, "").replace(/\s+(algo|alguien)$/, "").trim());
+    for (const f of [...forms]) {
+      let g = f;
+      for (const [re, full] of ABBR) g = g.replace(re, full);
+      if (g !== f) forms.add(g);
+    }
+    for (const f of forms) if (f) out.add(f);
+  }
+  return [...out];
+}
+
+function acceptedForms() {
+  const raw = cur.dir === "de2fs" ? cur.fs : cur.de;
+  return raw.split(/\s\/\s|;/).flatMap(variants);
+}
+
+function accepted() {
+  return acceptedForms().map(norm);
+}
+
+function lev(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 0; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+
+function diffNote(guessN, solN) {
+  const gw = guessN.split(/\s+/).filter(Boolean);
+  const sw = solN.split(/\s+/).filter(Boolean);
+  const gset = new Set(gw), sset = new Set(sw);
+  let extra = gw.filter(w => !sset.has(w));
+  const parts = [];
+  const missLeft = [];
+  for (const m of sw.filter(w => !gset.has(w))) {
+    const t = extra.find(e => lev(e, m) <= 2);
+    if (t) { parts.push(`„${t}“ → „${m}“`); extra = extra.filter(e => e !== t); }
+    else missLeft.push(m);
+  }
+  if (missLeft.length) parts.push("fehlt: " + missLeft.join(", "));
+  if (extra.length) parts.push("zu viel: " + extra.join(", "));
+  return parts.join(" · ");
+}
+
+function showResults() {
+  $("quiz").hidden = true;
+  $("results").hidden = false;
+  const wrongs = Object.values(wrongMap);
+  $("scoreLine").textContent = `${session.ok} richtig · ${session.bad} falsch`;
+  $("wrongWrap").innerHTML = wrongs.length
+    ? `<table><tr><th>Deutsch</th><th>Fremdsprache</th><th>×</th></tr>` +
+      wrongs.map(w => `<tr><td>${esc(w.de)}</td><td>${esc(w.fs)}${w.info ? ` <span class="pill">${esc(w.info)}</span>` : ""}</td><td class="n">${w.n}</td></tr>`).join("") + `</table>`
+    : `<p style="color:var(--ok)">Alles richtig — stark!</p>`;
+  $("statLine").textContent = statText();
+}
+
+function check() {
+  if (!cur || answered) return;
+  const fuzzy = $("fuzzy").checked;
+  const g = norm($("answer").value);
+  const acc = accepted();
+  const eq = (a, b) => fuzzy ? stripAcc(a) === stripAcc(b) : a === b;
+  const strictHit = acc.some(a => eq(a, g));
+  const looseHit = !strictHit && acc.some(a => eq(loose(a), loose(g)));
+  const hit = strictHit || looseHit;
+  answered = true; lastWasHit = hit;
+  const sol = cur.dir === "de2fs" ? cur.fs : cur.de;
+  if (hit) {
+    session.ok++; prog(cur).ok++;
+    $("feedback").className = "feedback ok";
+    $("feedback").textContent = strictHit ? "✓ Richtig!" : `✓ Richtig — genau: ${sol}`;
+  } else {
+    session.bad++; prog(cur).bad++;
+    const k = keyOf(cur);
+    const w = wrongMap[k] || (wrongMap[k] = { de: cur.de, fs: cur.fs, info: cur.info, n: 0 });
+    w.n++;
+    const forms = acceptedForms();
+    const best = forms.reduce((b, f) => lev(norm(f), g) < lev(norm(b), g) ? f : b, forms[0]);
+    const dn = diffNote(g, norm(best));
+    $("feedback").className = "feedback bad";
+    $("feedback").innerHTML = `✗ ${esc(sol)}` + (dn ? `<br><small>${esc(dn)}</small>` : "");
+    $("correct").hidden = false;
+  }
+  if (cur.info) $("info").textContent = cur.info;
+  $("statLine").textContent = statText();
+  save();
+  const sp = seenInPool();
+  if (sp.total && sp.n >= sp.total) setTimeout(() => { if (answered) showResults(); }, 900);
+  if ($("progressBox").open) renderProgress();
+}
+
+function markCorrect() {
+  if (!cur || !answered || lastWasHit) return;
+  session.bad--; session.ok++;
+  prog(cur).bad = Math.max(0, prog(cur).bad - 1); prog(cur).ok++;
+  lastWasHit = true;
+  delete wrongMap[keyOf(cur)];
+  $("feedback").className = "feedback ok";
+  $("feedback").textContent = "✓ Richtig (nachträglich gewertet)";
+  $("statLine").textContent = statText();
+  $("correct").hidden = true;
+  save();
+  if ($("progressBox").open) renderProgress();
+}
+
+$("check").onclick = check;
+$("correct").onclick = markCorrect;
+$("finish").onclick = showResults;
+$("again").onclick = () => { session = { ok: 0, bad: 0 }; seen = new Set(); wrongMap = {}; pick(); show(); };
+$("resume").onclick = () => { seen = new Set(); pick(); show(); };
+$("answer").addEventListener("keydown", e => {
+  if (e.key === "Enter") answered ? (pick(), show()) : check();
+  else if ((e.key === " " || e.key === "ArrowRight") && answered) { e.preventDefault(); pick(); show(); }
+});
+document.addEventListener("keydown", e => {
+  if (!e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "r") { e.preventDefault(); markCorrect(); }
+  else if (k === "s") { e.preventDefault(); $("hardBtn").click(); }
+  else if (k === "n") { e.preventDefault(); pick(); show(); }
+  else if (k === "b" && !$("quiz").hidden) { e.preventDefault(); showResults(); }
+});
+$("next").onclick = () => { pick(); show(); };
+$("progressBox").addEventListener("toggle", () => { if ($("progressBox").open) renderProgress(); });
+$("progressWrap").addEventListener("click", e => {
+  const tr = e.target.closest("tr[data-deck]");
+  if (!tr) return;
+  $("deckSel").value = tr.dataset.deck;
+  $("deckSel").onchange();
+});
+$("hardBtn").onclick = () => { if (!cur) return; const p = prog(cur); p.hard = !p.hard; save(); show(); };
+$("deckSel").onchange = () => { session = { ok: 0, bad: 0 }; seen = new Set(); wrongMap = {}; pick(); show(); };
+
+$("importBtn").onclick = () => {
+  const name = $("newDeckName").value.trim();
+  const lines = $("importArea").value.split("\n").map(l => l.trim()).filter(Boolean);
+  if (!name || !lines.length) { $("importMsg").textContent = "Deckname + Zeilen nötig."; return; }
+  const custom = JSON.parse(localStorage.getItem("vt_custom") || "{}");
+  custom[name] = (custom[name] || []).concat(lines.map(l => {
+    const [de, fs, info] = l.split(";").map(s => s && s.trim());
+    return { de: de || "", fs: fs || "", info: info || "" };
+  }).filter(w => w.de && w.fs));
+  localStorage.setItem("vt_custom", JSON.stringify(custom));
+  DECKS[name] = custom[name];
+  refreshDecks(name); pick(); show();
+  $("importMsg").textContent = `${lines.length} Vokabeln in „${name}“ importiert.`;
+  $("importArea").value = "";
+};
+
+refreshDecks();
+pick();
+show();
+</script>
+</body>
+</html>
